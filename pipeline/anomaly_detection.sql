@@ -1,7 +1,5 @@
--- Step 1: Clear existing anomaly rows before re-inserting (idempotent)
 DELETE FROM price_anomaly;
 
--- Step 2: Compute rolling baseline + z-score for wholesale, join retail, insert anomalies
 INSERT INTO price_anomaly (
     crop_id, mandi_id, district, city, price_date,
     wholesale_price, wholesale_baseline, wholesale_zscore,
@@ -90,7 +88,8 @@ SELECT
     rs.retail_price,
     ROUND(rs.retail_baseline::numeric, 2),
     rs.retail_zscore,
-    ROUND(((rs.retail_price - ws.wholesale_price) / NULLIF(ws.wholesale_price, 0) * 100)::numeric, 2) AS wedge_pct,
+    ROUND(((rs.retail_price - ws.wholesale_price)
+        / NULLIF(ws.wholesale_price, 0) * 100)::numeric, 2) AS wedge_pct,
     CASE
         WHEN (ws.wholesale_zscore IS NOT NULL AND ABS(ws.wholesale_zscore) > 2)
           OR (rs.retail_zscore IS NOT NULL AND ABS(rs.retail_zscore) > 2)
