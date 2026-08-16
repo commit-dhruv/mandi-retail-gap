@@ -132,7 +132,6 @@ def main():
                 total_skipped += 1
                 continue
 
-            is_provisional = False
             CROP_PRICE_BOUNDS = {
                 'Onion':        (2, 100),
                 'Potato':       (3, 80),
@@ -142,10 +141,12 @@ def main():
             }
             lower, upper = CROP_PRICE_BOUNDS.get(commodity, (1, 500))
             if modal_price_per_kg < lower or modal_price_per_kg > upper:
-                print(f"Suspicious price for {commodity} at {mandi_name}: {modal_price_per_kg}")
-                is_provisional = True
+                print(f"Suspicious price for {commodity} at {mandi_name}: {modal_price_per_kg} — SKIPPING")
+                total_skipped += 1
                 total_flagged_provisional += 1
+                continue
 
+            is_provisional = False
             if (datetime.now().date() - arrival_date).days <= 3:
                 is_provisional = True
 
