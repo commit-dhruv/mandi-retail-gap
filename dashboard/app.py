@@ -44,6 +44,8 @@ DISTRICT_NAME_FIXES = {
     "Junagarh": "Junagadh",
     "Chhota Udepur": "Chhota Udaipur",
     "Devbhoomi Dwarka": "Devbhumi Dwarka",
+    "Kachchh": "Kutch",
+    "Vadodara(Baroda)": "Vadodara",
 }
 
 
@@ -390,8 +392,8 @@ with tab3:
             color="avg_wedge_pct",
             color_continuous_scale=["green", "yellow", "red"],
             mapbox_style="carto-positron",
-            zoom=5.3,
-            center={"lat": 22.26, "lon": 71.19},
+            zoom=6.1,
+            center={"lat": 22.65, "lon": 71.8},
             opacity=0.75,
             labels={"avg_wedge_pct": "Avg Wedge %"},
         )
