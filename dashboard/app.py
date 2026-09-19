@@ -384,18 +384,20 @@ with tab3:
         map_df["district_norm"] = map_df["district"].apply(normalize_district)
         map_df = map_df.groupby("district_norm", as_index=False)["avg_wedge_pct"].mean()
 
-        fig = px.choropleth_mapbox(
+        fig = px.choropleth_map(
             map_df,
             geojson=geojson,
             locations="district_norm",
             featureidkey=f"properties.{GEOJSON_DISTRICT_KEY}",
             color="avg_wedge_pct",
             color_continuous_scale=["green", "yellow", "red"],
-            mapbox_style="carto-positron",
+            map_style="carto-positron",
             zoom=6.1,
             center={"lat": 22.65, "lon": 71.8},
             opacity=0.75,
             labels={"avg_wedge_pct": "Avg Wedge %"},
+            hover_name="district_norm",
+            hover_data={"avg_wedge_pct": ":.1f", "district_norm": False},
         )
         fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
         st.plotly_chart(fig, use_container_width=True)
