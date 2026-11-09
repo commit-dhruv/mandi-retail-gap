@@ -200,7 +200,7 @@ class CsvImportAdapter(BaseSourceAdapter):
             header_idx = 0
             for idx, line in enumerate(sample_lines):
                 lower = line.lower()
-                if "commodity" in lower or "market" in lower or "cmdt" in lower or "arrival" in lower:
+                if "commodity" in lower or "cmdt" in lower:
                     header_idx = idx
                     break
 
