@@ -2,3 +2,4 @@
 dashboard/.streamlit/
 # Local secrets
 .env
+__pycache__/
