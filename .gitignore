@@ -3,3 +3,7 @@ dashboard/.streamlit/
 # Local secrets
 .env
 __pycache__/
+data_inbox/*.csv
+data_inbox/*.xlsx
+data_inbox/processed/*
+!data_inbox/processed/.gitkeep
