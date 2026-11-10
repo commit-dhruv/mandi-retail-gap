@@ -62,22 +62,17 @@ def normalize_district(name):
 # ---------------------------------------------------------------------------
 
 def get_connection():
-    return psycopg2.connect(st.secrets["DATABASE_URL"])
+    return psycopg2.connect(st.secrets["DATABASE_URL"], connect_timeout=15)
 
 
 @st.cache_data(ttl=3600)
 def run_query(query, params=None):
     """Run a SQL query against Neon and return a DataFrame. Cached for 1 hour."""
+    conn = get_connection()
     try:
-        conn = get_connection()
-        try:
-            df = pd.read_sql_query(query, conn, params=params)
-        finally:
-            conn.close()
-        return df
-    except Exception as e:
-        st.error(f"Database error: {e}")
-        return pd.DataFrame()
+        return pd.read_sql_query(query, conn, params=params)
+    finally:
+        conn.close()
 
 
 @st.cache_data(ttl=3600)
@@ -122,7 +117,7 @@ def get_overview_metrics(crops, start_date, end_date):
         "SELECT COUNT(DISTINCT district) AS n FROM mandi_master WHERE district IS NOT NULL"
     )
     days_df = run_query(
-        "SELECT (MAX(price_date) - MIN(price_date)) AS n FROM wholesale_price"
+        "SELECT COUNT(DISTINCT price_date) AS n FROM wholesale_price"
     )
 
     def first_int(df):
@@ -215,12 +210,9 @@ def get_district_wedge(crops, start_date, end_date):
 
 @st.cache_data(ttl=3600)
 def load_geojson():
-    try:
-        resp = requests.get(GEOJSON_URL, timeout=15)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception:
-        return None
+    resp = requests.get(GEOJSON_URL, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
 
 
 @st.cache_data(ttl=3600)
@@ -230,6 +222,7 @@ def get_anomalies(crops, start_date, end_date):
         SELECT c.crop_name AS "Crop",
                a.price_date AS "Date",
                a.district AS "District",
+               m.mandi_name AS "Mandi",
                a.wholesale_price AS "Wholesale Price",
                a.wholesale_baseline AS "30-Day Baseline",
                a.wholesale_zscore AS "Wholesale Z-Score",
@@ -239,6 +232,7 @@ def get_anomalies(crops, start_date, end_date):
                a.anomaly_flag AS "anomaly_flag"
         FROM price_anomaly a
         JOIN crop_master c ON a.crop_id = c.crop_id
+        LEFT JOIN mandi_master m ON a.mandi_id = m.mandi_id
         WHERE a.anomaly_flag = true
           AND c.crop_name IN %(crops)s
           AND a.price_date BETWEEN %(start)s AND %(end)s
@@ -270,6 +264,20 @@ def pct_fmt(v):
 
 st.title("🌾 KrishiPulse")
 st.caption("Agri-Mandi Price Anomaly Radar — Gujarat")
+
+_fresh = run_query(
+    "SELECT (SELECT MAX(price_date) FROM wholesale_price) AS w, "
+    "(SELECT MAX(price_date) FROM retail_price WHERE data_type = 'scraped') AS r, "
+    "(SELECT MAX(price_date) FROM price_anomaly) AS a"
+)
+if not _fresh.empty and not _fresh.isna().any().any():
+    st.caption(
+        f"Data through: wholesale {pd.to_datetime(_fresh.loc[0, 'w']):%d %b %Y} | "
+        f"retail {pd.to_datetime(_fresh.loc[0, 'r']):%d %b %Y} | "
+        f"anomalies {pd.to_datetime(_fresh.loc[0, 'a']):%d %b %Y}. "
+        "Wholesale comes from Agmarknet reports imported weekly; "
+        "the latest 3 days are provisional and excluded from anomalies."
+    )
 
 min_date, max_date = get_date_bounds()
 
@@ -317,7 +325,7 @@ with tab1:
         display_df = summary_df.copy()
         for col in ["Min Price", "Max Price", "Avg Price"]:
             display_df[col] = display_df[col].apply(currency_fmt)
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(display_df, width="stretch", hide_index=True)
 
 # ---------------------------------------------------------------------------
 # Tab 2 — Price Trends
@@ -353,14 +361,14 @@ with tab2:
                 )
 
         fig.update_layout(legend_title_text="", hovermode="x unified")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     else:
         chart_df = wholesale_df.pivot(index="price_date", columns="crop", values="modal_price")
         st.line_chart(chart_df)
 
     st.caption(
         "Wholesale prices averaged across all Gujarat mandis for selected date range. "
-        "Retail prices from Blinkit Ahmedabad."
+        "Retail prices are manually logged Blinkit Ahmedabad prices; values before 18 Jul 2026 are estimated backfill."
     )
 
 # ---------------------------------------------------------------------------
@@ -369,9 +377,17 @@ with tab2:
 
 with tab3:
     st.subheader("District Wedge Heat-Map")
+    st.caption(
+        "Wedge % = (retail price - wholesale price) / wholesale price, averaged over the selected dates. "
+        "Each mandi is compared with the retail price of its district's city: Ahmedabad is real Blinkit data, "
+        "five other cities are modeled from Ahmedabad, and all other districts use Ahmedabad as the Gujarat reference."
+    )
 
     wedge_df = get_district_wedge(crops_for_query, start_date, end_date)
-    geojson = load_geojson()
+    try:
+        geojson = load_geojson()
+    except Exception:
+        geojson = None
 
     if geojson is None:
         st.warning("Map unavailable — GeoJSON could not be loaded")
@@ -400,7 +416,7 @@ with tab3:
             hover_data={"avg_wedge_pct": ":.1f", "district_norm": False},
         )
         fig.update_layout(margin=dict(l=0, r=0, t=0, b=0))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     st.subheader("Top 5 Districts by Avg Retail Premium (Wedge %)")
     if wedge_df.empty:
@@ -411,7 +427,7 @@ with tab3:
         top5 = top5.rename(
             columns={"district": "District", "avg_wedge_pct": "Avg Wedge %", "n_rows": "Records"}
         )
-        st.dataframe(top5[["District", "Avg Wedge %", "Records"]], use_container_width=True, hide_index=True)
+        st.dataframe(top5[["District", "Avg Wedge %", "Records"]], width="stretch", hide_index=True)
 
 # ---------------------------------------------------------------------------
 # Tab 4 — Anomaly Table
@@ -451,9 +467,12 @@ with tab4:
         }
 
         styled = df.style.map(color_zscore, subset=["Wholesale Z-Score"]).format(format_map)
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+        st.dataframe(styled, width="stretch", hide_index=True)
 
     st.caption(
-        "Showing anomalies where wholesale z-score > 2 stddev from 30-day rolling baseline. "
-        "Retail prices from Blinkit Ahmedabad (scraped) or calibrated model."
+        "A row is flagged when the wholesale price is more than 2 standard deviations and at least 20% away "
+        "from its own 30-day baseline, or when the retail price is more than 2 standard deviations from its baseline. "
+        "Each mandi uses its most-reported variety. Retail premium compares each mandi with its district city: "
+        "Ahmedabad is Blinkit data, five other cities are modeled from Ahmedabad, "
+        "and other districts use Ahmedabad as the Gujarat reference."
     )
