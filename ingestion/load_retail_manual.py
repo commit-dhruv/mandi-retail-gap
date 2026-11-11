@@ -73,6 +73,8 @@ def load_rows():
 
 
 def validate_row(row, crop_ids, latest_allowed):
+    if "backfill" in row["notes"].lower():
+        return "BACKFILL", None
     crop = crop_ids.get(row["crop_name"].lower())
     if crop is None:
         return None, f"unknown crop '{row['crop_name']}'"
@@ -112,7 +114,7 @@ def main():
 
     rows = load_rows()
     latest_allowed = date.today() + timedelta(days=1)
-    stats = {"processed": 0, "inserted": 0, "updated": 0, "unchanged": 0, "skipped": 0}
+    stats = {"processed": 0, "inserted": 0, "updated": 0, "unchanged": 0, "skipped": 0, "backfill_ignored": 0}
 
     conn = psycopg2.connect(DATABASE_URL, connect_timeout=15)
     try:
@@ -129,6 +131,9 @@ def main():
         for row_num, row in enumerate(rows, start=2):
             stats["processed"] += 1
             record, error = validate_row(row, crop_ids, latest_allowed)
+            if record == "BACKFILL":
+                stats["backfill_ignored"] += 1
+                continue
             if error:
                 stats["skipped"] += 1
                 warn(row_num, error)
@@ -165,6 +170,7 @@ def main():
     print(f"Total updated: {stats['updated']}")
     print(f"Total unchanged: {stats['unchanged']}")
     print(f"Total skipped: {stats['skipped']}")
+    print(f"Total ignored (estimated backfill): {stats['backfill_ignored']}")
     if stats["skipped"]:
         print(f"::warning::{stats['skipped']} sheet row(s) were skipped - fix them in the Google Sheet")
     if stats["inserted"] + stats["updated"] + stats["unchanged"] == 0:
