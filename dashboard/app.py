@@ -368,7 +368,7 @@ with tab2:
 
     st.caption(
         "Wholesale prices averaged across all Gujarat mandis for selected date range. "
-        "Retail prices are manually logged Blinkit Ahmedabad prices; values before 18 Jul 2026 are estimated backfill."
+        "Retail line shows manually logged Blinkit Ahmedabad prices from 18 Jul 2026. Earlier estimated values are not plotted."
     )
 
 # ---------------------------------------------------------------------------
@@ -379,7 +379,7 @@ with tab3:
     st.subheader("District Wedge Heat-Map")
     st.caption(
         "Wedge % = (retail price - wholesale price) / wholesale price, averaged over the selected dates. "
-        "Each mandi is compared with the retail price of its district's city: Ahmedabad is real Blinkit data, "
+        "Each mandi is compared with the retail price of its district's city: Ahmedabad is real Blinkit data (estimated before 18 Jul 2026), "
         "five other cities are modeled from Ahmedabad, and all other districts use Ahmedabad as the Gujarat reference."
     )
 
