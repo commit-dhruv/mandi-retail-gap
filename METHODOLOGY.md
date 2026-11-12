@@ -36,7 +36,7 @@ Quirks found during the build:
 ### 2b. What happened after 25 September
 
 Evidence kept in the project:
-- Scheduled GitHub Actions runs failed from 26 Sep 2026; the last successful run was on 25 Sep.
+- The last successful scheduled GitHub Actions run and the first failed one were both on 25 Sep 2026. Every scheduled run failed after that until the API step was made non-blocking on 10 Nov.
 - A local run on 5 Nov returned empty responses (five 2-byte raw files are kept as evidence).
 - A GitHub Actions run on 10 Nov was refused at connection level by the API host. The cause is unknown.
 - On 11 Nov, 15:22-16:22 IST, 24 timestamped readings were logged. Every call returned HTTP 200 in 0.3-0.6 seconds. The unfiltered query reported 10,548 records at 15:22 and 11,137 from 15:32, all dated 11 Nov. A full scan at about 15:27 found Gujarat contributing 5 of 10,548 records (Tamil Nadu 6,861). The Gujarat + Onion query returned 0 records at every reading.
