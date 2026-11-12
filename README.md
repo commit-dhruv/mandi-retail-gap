@@ -152,4 +152,16 @@ For Streamlit Cloud, add `DATABASE_URL` under Settings -> Secrets in TOML format
 ## Design Decisions and Limitations
 
 - **Retail data is logged by hand.** Blinkit uses JavaScript-rendered pages with authenticated requests, so automated scraping was ruled out after a feasibility test.
-- **Estimated retail period.** Retail values from 20 Jun to 17 Jul 2026 are estimates, stored as modeled, not plotted on the dashboard, and still used as the
+- **Estimated retail period.** Retail values from 20 Jun to 17 Jul 2026 are estimates, stored as modeled, not plotted on the dashboard, and still used as the retail reference for those dates.
+- **Modeled cities.** Retail prices for five cities come from Ahmedabad with margin factors based on distance, not fitted to real data from those cities.
+- **Wholesale refresh is weekly.** The API feed stopped returning Gujarat records for our crops after 25 Sep 2026, so wholesale data can be up to a week old plus the 3-day provisional window.
+- **Missing days.** 13 calendar days between 20 Jun and 25 Sep have no wholesale records, and nothing was invented to fill them.
+- **One variety per mandi.** Each mandi uses its most-reported variety, a stated simplification.
+- **No machine learning.** Rolling z-scores are explainable, auditable and need no training data.
+- **Flags are indicators.** A flagged row is a prompt to investigate, not proof of overcharging.
+
+---
+
+## Disclaimer
+
+Retail prices for cities other than Ahmedabad are model estimates, and retail values before 18 July 2026 are estimates. Wholesale data since 26 September 2026 is imported weekly by hand. All methodology decisions are documented in `METHODOLOGY.md`.
