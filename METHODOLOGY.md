@@ -47,7 +47,7 @@ Evidence kept in the project:
 **Source:** agmarknet.gov.in (Agmarknet 2.0), Reports -> Price and Arrivals Report. One file per crop, State Gujarat, District All, Market All. The portal limits this report to dates on or after 7 November 2025 and to a one-year window.
 **Importer:** pipeline/import_agmarknet_file.py with pipeline/sources/csv_import.py. It detects the header row, reads prices in Rs/Quintal, parses DD-MM-YYYY dates, averages grades of the same variety, and writes through the same idempotent upsert as the API loader.
 **Routine:** a weekly import, documented step by step in docs/WEEKLY_IMPORT.md. Overlapping date ranges are safe because of the upsert.
-**First import (9 Nov 2026):** 3,888 rows read, 3,856 accepted, 32 rejected (0.8%). All 32 failed the price bounds: 30 Green Chilli rows (17 from Vadhvan, which repeats the same Rs 5.00 / 7.50 / 10.00 price triple on 17 different days, and 11 from Talalagir at Rs 8-9.50/kg) and 2 Tomato rows. The bounds were kept and the rejections are disclosed as a limitation.
+**First import (9 Nov 2026):** 3,888 rows read, 3,856 accepted, 32 rejected (0.8%). All 32 failed the price bounds: 30 Green Chilli rows (17 from Vadhvan, 15 of which repeat the identical Rs 5.00 / 7.50 / 10.00 price triple on different days; 11 from Talalagir at modal prices of Rs 8-9.50/kg; and 2 from the Rajkot sub yard) and 2 Tomato rows. The bounds were kept and the rejections are disclosed as a limitation.
 
 ### 2d. Cleaning rules (both routes)
 
@@ -92,7 +92,7 @@ The retail layer is a hybrid: real manually logged prices for one city (Ahmedaba
 | Garlic | 60 | 600 |
 | Green Chilli | 30 | 400 |
 
-**Estimated period:** values for 20 Jun - 17 Jul 2026 (140 rows) are estimates, not real Blinkit prices, because logging began on 18 Jul. They are stored with data_type 'modeled', and the sheet loader ignores sheet rows noted as backfill. The dashboard does not plot them as retail prices.
+**Estimated period:** values for 20 Jun - 17 Jul 2026 (140 rows) are estimates, not real Blinkit prices, because logging began on 18 Jul. They are stored with data_type 'modeled', and the sheet loader ignores sheet rows noted as backfill. The dashboard does not plot them as retail prices, but they are still the retail reference when wedge values are computed for those dates, and the heat-map caption says so.
 
 ### 3b. Margin model (other cities)
 
@@ -165,7 +165,7 @@ The dashboard reads directly from the database, caches query results for one hou
 | Wholesale API feed stopped returning Gujarat records for our crops after 25 Sep 2026 | Daily automatic wholesale refresh is not currently working | Weekly manual CSV import in place; API loader retained |
 | Wholesale data is refreshed weekly by hand | Data is up to a week plus 3 days behind | Freshness check fails the run if more than 8 days old |
 | 13 calendar days (20 Jun - 25 Sep) have no wholesale records | Gaps in early baselines | Disclosed; no records were invented |
-| Retail logging started on 18 Jul 2026 | 20 Jun - 17 Jul retail values are estimates | Labelled modeled and not plotted as retail |
+| Retail logging started on 18 Jul 2026 | 20 Jun - 17 Jul retail values are estimates and still feed wedge values for those dates | Labelled modeled, not plotted as retail, noted in the heat-map caption |
 | Modeled retail prices for five cities derive from Ahmedabad | Wedges outside Ahmedabad depend on the margin factors | Disclosed on the dashboard and here |
 | Blinkit is a quick-commerce channel with convenience markups | The retail premium is an upper-end indicator, not the intermediary margin alone | Stated; wedge is not presented as pure overcharging |
 | A flag can reflect a change in what a mandi reports, not only a real price move | Example: Rajkot sub yard potato jumped from about Rs 10 to Rs 16 for three days in October while the daily min-max range narrowed from about Rs 10 to about Rs 1.5 | Flags are indicators to investigate, not verdicts |
