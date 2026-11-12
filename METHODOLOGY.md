@@ -1,24 +1,63 @@
-# KrishiPulse — Methodology Note
+# KrishiPulse - Methodology Note
 
-This document explains the data approach, design decisions, and known limitations of the KrishiPulse pipeline. It is intended for evaluators, mentors, and anyone reproducing or extending this project.
+This note explains the data approach, design decisions and known limitations of the KrishiPulse pipeline. It describes the system as it stands on 12 November 2026 and is written for evaluators, mentors and anyone reproducing or extending the project.
 
 ---
 
-## 1. Wholesale Data Layer
+## 1. Data timeline at a glance
 
-**Source:** Agmarknet API via data.gov.in (resource ID: `9ef84268-d588-465a-a308-a864a43d0070`)
-**Coverage:** Gujarat mandis, 5 crops (Onion, Potato, Tomato, Garlic, Green Chilli)
-**Frequency:** Pulled twice daily (9:00 AM IST and 2:30 PM IST) via GitHub Actions cron
+| Period | Wholesale source | Days with data | Rows |
+|---|---|---|---|
+| 20 Jun - 25 Sep 2026 | data.gov.in API, resource "Current Daily Price of Various Commodities from Various Markets (Mandi)" (ID 9ef84268-d588-465a-a308-a864a43d0070) | 85 | 4,125 |
+| 26 Sep - 9 Nov 2026 | Manual import of Agmarknet 2.0 "Price and Arrivals Report" CSV files | 45 | 3,856 |
 
-### Key decisions
+Total: 130 days and 7,981 rows of wholesale data across 45 Gujarat mandis. The live API supplied about 65% of the days (85 of 130). Thirteen calendar days between 20 Jun and 25 Sep have no wholesale records.
 
-**Unit normalization:** Agmarknet reports prices in rupees per quintal (100 kg). All prices are converted to ₹/kg by dividing by 100 before storage. This is applied consistently so wholesale and retail prices are comparable.
+After 25 September 2026 the API feed stopped returning records for our Gujarat crops and the pipeline fell back to the CSV route. The cause has not been identified. The API loader still runs on every scheduled run and writes through the same upsert as the CSV importer, so ingestion resumes through the same code path if the feed returns Gujarat records for these crops. This has not been exercised since the outage, so it is described here as retained, not as re-verified.
 
-**Date parsing:** Agmarknet returns dates as `DD/MM/YYYY` strings. These are parsed explicitly using `datetime.strptime(date_str, '%d/%m/%Y')` — never using pandas auto-inference, which silently swaps day and month for ambiguous dates.
+---
 
-**Per-crop price sanity bounds:** After unit conversion, any record outside the following ranges is rejected (skipped entirely, never inserted):
+## 2. Wholesale data layer
 
-| Crop | Min (₹/kg) | Max (₹/kg) |
+**Coverage:** Gujarat mandis, 5 crops (Onion, Potato, Tomato, Garlic, Green Chilli).
+
+### 2a. Live API period (20 Jun - 25 Sep 2026)
+
+**Source:** data.gov.in resource "Current Daily Price of Various Commodities from Various Markets (Mandi)", which republishes Agmarknet data.
+**Frequency:** pulled twice a day (9:00 AM and 2:30 PM IST) by a GitHub Actions cron job.
+
+Quirks found during the build:
+- A browser User-Agent header is required; blank headers return 502.
+- Filter keys use the .keyword suffix: filters[state.keyword], filters[commodity.keyword].
+- The feed is a current-day snapshot with no historical archive, so history was built by daily accumulation.
+- Mandis report throughout the day. Early-morning pulls returned zero records, and the cron times were moved from 6:00 AM IST after a 41% failure rate.
+- Each API response was saved to pipeline/raw/ before any cleaning, so processing can be repeated without calling the API again.
+
+### 2b. What happened after 25 September
+
+Evidence kept in the project:
+- Scheduled GitHub Actions runs failed from 26 Sep 2026; the last successful run was on 25 Sep.
+- A local run on 5 Nov returned empty responses (five 2-byte raw files are kept as evidence).
+- A GitHub Actions run on 10 Nov was refused at connection level by the API host. The cause is unknown.
+- On 11 Nov, 15:22-16:22 IST, 24 timestamped readings were logged. Every call returned HTTP 200 in 0.3-0.6 seconds. The unfiltered query reported 10,548 records at 15:22 and 11,137 from 15:32, all dated 11 Nov. A full scan at about 15:27 found Gujarat contributing 5 of 10,548 records (Tamil Nadu 6,861). The Gujarat + Onion query returned 0 records at every reading.
+- One reading at 15:30 IST returned zero records for every query, and the feed was populated again two minutes later. It followed a large scan run from the project machine, and the cause is unknown.
+
+### 2c. Fallback: manual Agmarknet CSV import (26 Sep 2026 onward)
+
+**Source:** agmarknet.gov.in (Agmarknet 2.0), Reports -> Price and Arrivals Report. One file per crop, State Gujarat, District All, Market All. The portal limits this report to dates on or after 7 November 2025 and to a one-year window.
+**Importer:** pipeline/import_agmarknet_file.py with pipeline/sources/csv_import.py. It detects the header row, reads prices in Rs/Quintal, parses DD-MM-YYYY dates, averages grades of the same variety, and writes through the same idempotent upsert as the API loader.
+**Routine:** a weekly import, documented step by step in docs/WEEKLY_IMPORT.md. Overlapping date ranges are safe because of the upsert.
+**First import (9 Nov 2026):** 3,888 rows read, 3,856 accepted, 32 rejected (0.8%). All 32 failed the price bounds: 30 Green Chilli rows (17 from Vadhvan, which repeats the same Rs 5.00 / 7.50 / 10.00 price triple on 17 different days, and 11 from Talalagir at Rs 8-9.50/kg) and 2 Tomato rows. The bounds were kept and the rejections are disclosed as a limitation.
+
+### 2d. Cleaning rules (both routes)
+
+**Unit normalization:** Agmarknet reports rupees per quintal (100 kg). All prices are converted to Rs/kg by dividing by 100.
+
+**Date parsing:** dates are parsed with explicit formats, never with pandas auto-inference, which silently swaps day and month for ambiguous dates.
+
+**Per-crop price bounds:** a record outside these ranges is rejected and never inserted.
+
+| Crop | Min (Rs/kg) | Max (Rs/kg) |
 |---|---|---|
 | Onion | 2 | 100 |
 | Potato | 3 | 80 |
@@ -26,115 +65,120 @@ This document explains the data approach, design decisions, and known limitation
 | Garlic | 20 | 500 |
 | Green Chilli | 10 | 300 |
 
-This catches Agmarknet data entry errors (e.g., Mehsana Tomato reported at ₹0.80–₹2.30/kg, confirmed as clerk entry errors by cross-referencing real market rates).
+**Provisional flag:** records dated within 3 days of today are marked provisional and excluded from anomaly detection, because late mandi reports arrive for a few days. The anomaly job clears the flag for older records on every run.
 
-**Provisional flag:** Records with `price_date` within 3 days of today are marked `is_provisional = true` and excluded from anomaly detection. This accounts for late-arriving mandi reports from rural areas. The flag is cleared daily for records older than 3 days.
-
-**Upsert, not insert:** Daily cron re-pulls the same day's data (mandis report throughout the day). A unique constraint on `(crop_id, mandi_id, variety, price_date)` combined with `INSERT ... ON CONFLICT DO UPDATE` prevents duplicate rows.
-
-**Raw JSON preservation:** Each API response is saved to `pipeline/raw/raw_wholesale_{crop}_{date}.json` before any cleaning. This allows reprocessing if cleaning logic changes, without re-hitting the API.
-
-**API quirks discovered during build:**
-- Requires a browser `User-Agent` header — blank headers return 502
-- Filter keys use `.keyword` suffix: `filters[state.keyword]`, `filters[commodity.keyword]`
-- The API is a current-day snapshot only — it has no historical archive. History is built by daily accumulation.
-- Agmarknet populates throughout the day. Early-morning pulls (before 9 AM IST) frequently return zero records. Cron times were adjusted after observing a 41% failure rate at 6:00 AM IST.
+**Upsert, not insert:** a unique key on (crop, mandi, variety, price date) with INSERT ... ON CONFLICT DO UPDATE prevents duplicates when overlapping data is loaded again.
 
 ---
 
-## 2. Retail Data Layer
+## 3. Retail data layer
 
-The retail data layer uses a hybrid approach: real manually-logged prices for one city (Ahmedabad), extended to five other Gujarat cities using a calibrated margin model. This is disclosed transparently rather than treated as scraped data.
+The retail layer is a hybrid: real manually logged prices for one city (Ahmedabad), extended to five other Gujarat cities with a margin model. It is disclosed as such, not presented as scraped data.
 
-### 2a. Real scraped data (Ahmedabad)
+### 3a. Logged prices (Ahmedabad)
 
-**Platform:** Blinkit Ahmedabad
-**Method:** Manual daily logging — a teammate checks Blinkit each morning and logs the price of one standard product per crop into a shared Google Sheet
-**Product selection rules:** First non-organic, non-specialty result per crop (e.g., "Onion (Dungdi) 1kg", "Potato (Bateta) 1kg"). Same product logged every day for time-series consistency.
-**Unit conversion:** Prices normalized to ₹/kg before logging (e.g., ₹41/100g → ₹410/kg for Garlic)
-**Storage:** Ingested daily by `ingestion/load_retail_manual.py`, stored as `data_type = 'scraped'` in `retail_price`
+**Platform:** Blinkit Ahmedabad.
+**Method:** a teammate logs the price of one standard product per crop each day into a shared Google Sheet, using the first non-organic, non-specialty result, and the same product every day. Prices are normalized to Rs/kg before logging.
+**Coverage:** 580 logged rows, 18 Jul - 10 Nov 2026, stored with data_type 'scraped'.
+**Why not automated scraping?** Blinkit pages are rendered by JavaScript and use authenticated requests carrying location tokens. A feasibility test ruled automation out as fragile.
 
-**Why not automated scraping?** Blinkit uses JS-rendered pages with authenticated POST requests carrying location tokens. Automated scraping was ruled out after a feasibility test — replicating the auth tokens is fragile and would break on any platform update. Manual logging was chosen as a reliable, auditable alternative.
+**Loader checks** (ingestion/load_retail_manual.py): each sheet row must have a known crop (case-insensitive), a valid YYYY-MM-DD date that is not in the future, city Ahmedabad, platform Blinkit, unit kg, and a price inside per-crop retail bounds. Bad rows are skipped and reported as warnings in the run log. A corrected price in the sheet updates the stored row. Conflicting duplicate rows are reported and the last row wins.
 
-**Backfill note:** Retail prices before July 18, 2026 (the date manual logging began) are estimated values, not real Blinkit prices. These are documented with `notes = 'estimated backfill'` in the `retail_price` table. They provide a baseline for the retail rolling average but should not be treated as ground truth.
+| Crop | Retail min (Rs/kg) | Retail max (Rs/kg) |
+|---|---|---|
+| Onion | 10 | 150 |
+| Potato | 10 | 120 |
+| Tomato | 10 | 200 |
+| Garlic | 60 | 600 |
+| Green Chilli | 30 | 400 |
 
-### 2b. Calibrated model (other cities)
+**Estimated period:** values for 20 Jun - 17 Jul 2026 (140 rows) are estimates, not real Blinkit prices, because logging began on 18 Jul. They are stored with data_type 'modeled', and the sheet loader ignores sheet rows noted as backfill. The dashboard does not plot them as retail prices.
 
-**Cities:** Surat, Vadodara, Rajkot, Gandhinagar, Bhavnagar
-**Formula:** `modeled_price = ahmedabad_scraped_price × city_margin_factor`
+### 3b. Margin model (other cities)
 
-| City | Margin Factor | Rationale |
+**Formula:** modeled_price = Ahmedabad logged price x city margin factor, generated by ingestion/generate_retail_model.py for each date and stored with data_type 'modeled'.
+
+| City | Margin factor | Rationale |
 |---|---|---|
 | Gandhinagar | 1.02 | Adjacent to Ahmedabad, minimal transport cost |
-| Vadodara | 1.03 | Close, well-connected |
-| Surat | 1.05 | ~260 km, moderate distribution markup |
-| Rajkot | 1.08 | ~220 km, smaller distribution network |
+| Vadodara | 1.03 | Close and well connected |
+| Surat | 1.05 | About 260 km, moderate distribution markup |
+| Rajkot | 1.08 | About 220 km, smaller distribution network |
 | Bhavnagar | 1.10 | Coastal location, higher last-mile cost |
 
-**Storage:** Generated daily by `ingestion/generate_retail_model.py`, stored as `data_type = 'modeled'` in `retail_price`
-
-**Stated limitations of this model:**
-- Margin factors are estimates based on distance and distribution logic — not fitted to real price data from those cities
-- The model assumes a linear relationship between Ahmedabad price and other cities, which may not hold during supply disruptions (e.g., floods, local crop failures)
-- All 5 modeled cities move together when Ahmedabad price changes — this can cause mass anomaly flags on the retail z-score side when a single Ahmedabad data point is unusual. For this reason, anomalies driven purely by retail z-score (with null or low wholesale z-score) should be treated as indicative rather than definitive.
+The factors are estimates based on distance and distribution logic. They are not fitted to real price data from those cities. All five modeled cities move together whenever the Ahmedabad price changes.
 
 ---
 
-## 3. Anomaly Detection
+## 4. Anomaly detection
 
-**Method:** SQL window-function rolling z-score — no machine learning.
-
-**Why not ML?** A rolling z-score is statistically sound, fully explainable, and doesn't require training data. Any flagged row can be manually verified by inspecting the price, baseline, and z-score directly. ML would introduce a black-box layer to a system whose value is transparency.
+**Method:** SQL window-function rolling z-scores, with no machine learning. The method is explainable, needs no training data, and every flagged row can be checked by hand from its price, baseline and z-score.
 
 ### Algorithm
 
-For each crop × mandi combination (wholesale) and crop × city combination (retail):
+1. **One series per crop and mandi.** Each mandi uses its most-reported variety, so prices of different varieties (for example Local and Nasik) are never mixed in one baseline.
+2. **Baseline.** A 30-day trailing average and standard deviation, excluding the current day:
 
-1. Compute a 30-day trailing average (baseline) and standard deviation using SQL window functions, looking back 30 days and excluding today:
-```sql
-AVG(modal_price) OVER (
-    PARTITION BY crop_id, mandi_id
-    ORDER BY price_date
-    ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
-)
-```
+        AVG(modal_price) OVER (
+            PARTITION BY crop_id, mandi_id
+            ORDER BY price_date
+            ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+        )
 
-2. Compute z-score:
-```
-z_score = (today's price − baseline) / standard_deviation
-```
-
-3. Flag if `|z_score| > 2` (price is more than 2 standard deviations from normal)
-
-4. Also compute wedge: `wedge_pct = (retail_price − wholesale_price) / wholesale_price × 100`
+3. **Z-score:** (today's price - baseline) / standard deviation.
+4. **Wholesale flag:** the absolute z-score is above 2 and the price is at least 20% away from its baseline. The 20% condition stops tiny moves in very flat price series from being flagged.
+5. **Retail flag:** the absolute retail z-score is above 2. Retail z-scores use only logged Ahmedabad prices, never modeled prices.
+6. **Retail reference and wedge.** Each mandi is compared with the retail price of its district's city: Ahmedabad uses the logged Blinkit price, Surat, Vadodara, Rajkot, Gandhinagar and Bhavnagar districts use that city's modeled price, and all other districts use the Ahmedabad logged price as a Gujarat-wide reference. wedge_pct = (retail price - wholesale price) / wholesale price x 100.
 
 **Guards against false positives:**
-- `is_provisional = false` filter excludes data younger than 3 days
-- Minimum 7 preceding records required before computing a z-score — prevents low-data mandis with tiny standard deviations from generating extreme z-scores from minor price moves
-- `NULLIF(stddev, 0)` prevents division-by-zero when all preceding prices are identical
-- Per-crop price bounds catch bad source data before it enters the baseline calculation
+- Provisional data (the latest 3 days) is excluded.
+- At least 7 preceding records are required before a z-score is computed.
+- A zero standard deviation gives no z-score instead of a division error.
+- Per-crop bounds keep bad source values out of the baseline.
+- Mandis with too few reports are never scored (for example Jasdan, Kalawad and Gondal APMC).
 
-**Results are re-computed daily** — `price_anomaly` is fully cleared and repopulated on each run, making it idempotent.
+**Recomputed on every run:** the price_anomaly table is cleared and rebuilt each run, so the result is repeatable.
+
+**Result as of 11 Nov 2026:** 608 flagged rows out of 7,548 scored rows (8.1%). Among the six districts with the most flags, the flag rate is 5-9%, and no single district dominates.
 
 ---
 
-## 4. Known Limitations
+## 5. Automation and monitoring
+
+A GitHub Actions workflow runs twice a day (9:00 AM and 2:30 PM IST) with these steps:
+1. Wholesale API loader (non-blocking: a failure here does not stop the run)
+2. Retail sheet loader
+3. Retail margin model
+4. Anomaly detection
+5. Data freshness check, which fails the run if the latest wholesale date is more than 8 days old or the latest logged retail date is more than 4 days old
+
+Because wholesale data now depends on the weekly CSV import, the freshness check is what turns a missed import into a visible failure. The 10 Nov run took under a minute.
+
+The dashboard reads directly from the database, caches query results for one hour, and does not cache database errors. A line under the title shows the date through which wholesale, retail and anomaly data run.
+
+---
+
+## 6. Known limitations
 
 | Limitation | Impact | Status |
 |---|---|---|
-| Agmarknet is current-day only, no historical archive | 30-day baseline takes 30+ days to become meaningful | Accepted — daily accumulation strategy, documented |
-| Retail backfill (before Jul 18, 2026) is estimated | Retail baseline for early dates is approximate | Documented in `notes` column |
-| Modeled retail prices move in lockstep | Can cause mass retail z-score flags on unusual Ahmedabad days | Accepted — flagged rows filtered by wholesale z-score for presentation |
-| Some Agmarknet district name spellings differ from GeoJSON | ~4 districts need name normalization | Fixed via `DISTRICT_NAME_FIXES` mapping |
-| Agmarknet data entry errors exist in source | Bad prices can enter the pipeline | Mitigated by per-crop bounds — records outside bounds are rejected entirely |
-| Grey districts on heat-map | 12 of 34 Gujarat districts have no Agmarknet data for these 5 crops | Expected — not a pipeline bug |
-| Variety aggregation | Agmarknet reports at variety level; this project maps all varieties to crop level | Stated simplification — `variety` raw string kept for reference |
+| Wholesale API feed stopped returning Gujarat records for our crops after 25 Sep 2026 | Daily automatic wholesale refresh is not currently working | Weekly manual CSV import in place; API loader retained |
+| Wholesale data is refreshed weekly by hand | Data is up to a week plus 3 days behind | Freshness check fails the run if more than 8 days old |
+| 13 calendar days (20 Jun - 25 Sep) have no wholesale records | Gaps in early baselines | Disclosed; no records were invented |
+| Retail logging started on 18 Jul 2026 | 20 Jun - 17 Jul retail values are estimates | Labelled modeled and not plotted as retail |
+| Modeled retail prices for five cities derive from Ahmedabad | Wedges outside Ahmedabad depend on the margin factors | Disclosed on the dashboard and here |
+| Blinkit is a quick-commerce channel with convenience markups | The retail premium is an upper-end indicator, not the intermediary margin alone | Stated; wedge is not presented as pure overcharging |
+| A flag can reflect a change in what a mandi reports, not only a real price move | Example: Rajkot sub yard potato jumped from about Rs 10 to Rs 16 for three days in October while the daily min-max range narrowed from about Rs 10 to about Rs 1.5 | Flags are indicators to investigate, not verdicts |
+| Some Agmarknet rows carry implausible prices | 32 of 3,888 rows (0.8%) rejected in the CSV import | Bounds kept; rejections disclosed |
+| Heat-map covers 23 of Gujarat's 34 districts | 11 districts have no reporting mandi for these crops | Expected; not a pipeline error |
+| Variety aggregation | Each mandi uses its most-reported variety | Stated simplification |
 
 ---
 
-## 5. What This Project Does Not Claim
+## 7. What this project does not claim
 
-- **Not real-time** — Agmarknet updates on a daily batch basis. The pipeline reflects yesterday's mandi prices, not today's live market.
-- **Not predictive** — no forecasting or price prediction. The system detects past and present anomalies only.
-- **Not a complete retail picture** — retail data covers Ahmedabad (real) and 5 modeled cities. It does not represent all of Gujarat's retail markets.
-- **Not a scraper** — the retail data collection is manual logging, not automated scraping. This is a deliberate, documented design decision.
+- **Not real-time.** Wholesale data is weeks-level fresh at worst and weekly by design right now; it is not a live market feed.
+- **Not predictive.** The system detects past and present anomalies and does not forecast prices.
+- **Not a complete retail picture.** Retail data covers Ahmedabad (logged) and five modeled cities, not all of Gujarat.
+- **Not a scraper.** Retail data is logged by hand, a documented design decision.
+- **Not proof of overcharging.** A high retail premium reflects retail-channel pricing, including convenience, as well as intermediary margins.
