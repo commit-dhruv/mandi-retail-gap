@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the KrishiPulse wholesale loader twice a day
+
+[Timer]
+OnCalendar=*-*-* 10:00:00
+OnCalendar=*-*-* 18:00:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
