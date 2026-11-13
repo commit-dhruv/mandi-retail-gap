@@ -21,13 +21,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Load wholesale prices (Variety-wise API)
-        continue-on-error: true
-        timeout-minutes: 15
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DATA_GOV_API_KEY: ${{ secrets.DATA_GOV_API_KEY }}
-        run: python -u pipeline/load_wholesale_variety.py --days 7
+      # Wholesale prices are loaded by pipeline/load_wholesale_variety.py from a machine in India.
+      # Requests to data.gov.in from GitHub-hosted runners failed when tested on 10 and 13 Nov 2026.
 
       - name: Load retail manual entries
         env:
