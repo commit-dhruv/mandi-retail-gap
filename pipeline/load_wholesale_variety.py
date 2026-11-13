@@ -50,7 +50,7 @@ def fetch_day(api_key, crop, day):
         body = None
         for attempt in range(1, RETRIES + 1):
             try:
-                response = requests.get(API_URL, params=params, headers=HEADERS, timeout=30)
+                response = requests.get(API_URL, params=params, headers=HEADERS, timeout=20)
                 if response.status_code == 200:
                     parsed = response.json()
                     if isinstance(parsed, dict) and "records" in parsed:
@@ -139,13 +139,22 @@ def main():
     started_at = datetime.now(timezone.utc)
     all_records, errors = [], []
     day = start
-    while day <= end:
+    consecutive_failures = 0
+    aborted = False
+    while day <= end and not aborted:
         for crop in CROPS:
             records, error = fetch_day(api_key, crop, day)
             all_records.extend(records)
             if error:
                 errors.append(error)
-                print(f"::warning::{error}")
+                consecutive_failures += 1
+                print(f"::warning::{error}", flush=True)
+                if consecutive_failures >= 5:
+                    print("::error::5 requests in a row failed; stopping early. The API may be unreachable from this machine.", flush=True)
+                    aborted = True
+                    break
+            else:
+                consecutive_failures = 0
             time.sleep(0.3)
         day += timedelta(days=1)
     print(f"Fetched {len(all_records)} API records for {start} to {end}; failed requests: {len(errors)}")

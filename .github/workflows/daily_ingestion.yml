@@ -23,10 +23,11 @@ jobs:
 
       - name: Load wholesale prices (Variety-wise API)
         continue-on-error: true
+        timeout-minutes: 15
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATA_GOV_API_KEY: ${{ secrets.DATA_GOV_API_KEY }}
-        run: python pipeline/load_wholesale_variety.py --days 7
+        run: python -u pipeline/load_wholesale_variety.py --days 7
 
       - name: Load retail manual entries
         env:
