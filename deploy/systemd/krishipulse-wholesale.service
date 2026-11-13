@@ -1,0 +1,9 @@
+[Unit]
+Description=KrishiPulse wholesale loader and anomaly detection
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/mandi-retail-gap
+ExecStart=%h/Projects/mandi-retail-gap/.venv/bin/python -u pipeline/load_wholesale_variety.py --days 7
+ExecStart=%h/Projects/mandi-retail-gap/.venv/bin/python -u pipeline/run_anomaly_detection.py
+TimeoutStartSec=30min
