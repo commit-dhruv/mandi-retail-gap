@@ -21,12 +21,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run ingestion script
-        continue-on-error: true
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DATA_GOV_API_KEY: ${{ secrets.DATA_GOV_API_KEY }}
-        run: python pipeline/load_wholesale_data.py
+      # Wholesale prices are loaded by pipeline/load_wholesale_variety.py from a machine in India.
+      # Requests to data.gov.in from GitHub-hosted runners failed when tested on 10 and 13 Nov 2026.
 
       - name: Load retail manual entries
         env:
@@ -47,4 +43,4 @@ jobs:
       - name: Check data freshness
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python pipeline/check_freshness.py
+        run: MAX_WHOLESALE_AGE_DAYS=5 python pipeline/check_freshness.py
