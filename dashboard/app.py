@@ -275,7 +275,7 @@ if not _fresh.empty and not _fresh.isna().any().any():
         f"Data through: wholesale {pd.to_datetime(_fresh.loc[0, 'w']):%d %b %Y} | "
         f"retail {pd.to_datetime(_fresh.loc[0, 'r']):%d %b %Y} | "
         f"anomalies {pd.to_datetime(_fresh.loc[0, 'a']):%d %b %Y}. "
-        "Wholesale comes from Agmarknet reports imported weekly; "
+        "Wholesale prices are loaded twice a day from the data.gov.in Agmarknet archive; "
         "the latest 3 days are provisional and excluded from anomalies."
     )
 
