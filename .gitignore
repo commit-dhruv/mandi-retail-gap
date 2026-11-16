@@ -7,3 +7,4 @@ data_inbox/*.csv
 data_inbox/*.xlsx
 data_inbox/processed/*
 !data_inbox/processed/.gitkeep
+alerts_sent.json
