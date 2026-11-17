@@ -40,7 +40,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python pipeline/run_anomaly_detection.py
 
-      - name: Check data freshness
+      - name: Run database health check
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: MAX_WHOLESALE_AGE_DAYS=5 python pipeline/check_freshness.py
+        run: python pipeline/health_check.py

@@ -87,7 +87,8 @@ def main():
     if not url:
         print("DATABASE_URL is not set")
         return 2
-    print("database host:", urlparse(url).hostname)
+    if not os.getenv("CI"):
+        print("database host:", urlparse(url).hostname)
     conn = psycopg2.connect(url, connect_timeout=15)
     cur = conn.cursor()
     failures = 0
