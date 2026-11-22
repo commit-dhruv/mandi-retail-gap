@@ -23,7 +23,7 @@ KrishiPulse makes that gap visible.
 - Sends flagged anomalies to Telegram (up to 5 per run, no repeats)
 - Runs on two schedules: a timer on the project laptop (wholesale load, anomaly detection, Telegram alerts) and GitHub Actions (retail load, margin model, anomaly detection, data freshness check)
 
-**Data state on 19 Nov 2026:** 12,700 wholesale rows over 152 consecutive days (20 Jun - 18 Nov 2026), 11,731 scored rows, 994 flagged (8.5%).
+**Data state on 22 Nov 2026:** 13,012 wholesale rows over 155 consecutive days (20 Jun - 21 Nov 2026), 12,043 scored rows, 1,005 flagged (8.3%).
 
 ---
 
@@ -75,7 +75,7 @@ From 25 Sep 2026, scheduled GitHub-hosted runs could not connect to api.data.gov
     │   └── raw/                         # Sample raw API responses
     ├── deploy/systemd/                  # Laptop timer and service unit files
     ├── dashboard/app.py                 # Streamlit dashboard (4 tabs)
-    ├── db/schema.sql                    # Six-table PostgreSQL schema
+    ├── db/schema.sql                    # Six core tables (migration 002 adds ingestion_log)
     ├── migrations/002_multisource.sql   # Adds the source column and the ingestion_log table
     ├── data_inbox/                      # Drop zone for downloaded CSV files
     ├── docs/WEEKLY_IMPORT.md            # Manual CSV import checklist
@@ -102,7 +102,7 @@ From 25 Sep 2026, scheduled GitHub-hosted runs could not connect to api.data.gov
 
 Each crop and mandi gets one price series, using the mandi's most-reported variety. For every day, a 30-day trailing average and standard deviation are computed with SQL window functions, excluding the current day. A wholesale price is flagged when its z-score is above 2 in absolute value and the price is at least 20% away from its baseline. At least 7 earlier records are required before a z-score is computed, and the latest 3 days of data are treated as provisional and excluded. Retail z-scores use only the logged Ahmedabad prices. Each mandi is compared with the retail price of its district's city: Ahmedabad uses logged Blinkit prices, five other cities use the modeled price, and all remaining districts use Ahmedabad as the Gujarat reference.
 
-The `price_anomaly` table is rebuilt on every run. Result on 19 Nov 2026: 994 flagged rows out of 11,731 scored rows (8.5%). See `METHODOLOGY.md` for the full method and its limits.
+The `price_anomaly` table is rebuilt on every run. Result on 22 Nov 2026: 1,005 flagged rows out of 12,043 scored rows (8.3%), scored through 18 Nov. See `METHODOLOGY.md` for the full method and its limits.
 
 ---
 
@@ -114,7 +114,7 @@ The `price_anomaly` table is rebuilt on every run. Result on 19 Nov 2026: 994 fl
 
 ## Key Findings
 
-- **Retail premium by crop.** Over the 30 days to 6 Nov 2026, the average retail premium over the mandi price was highest for Green Chilli (about 424%), then Tomato (238%), Garlic (206%), Potato (141%) and Onion (92%). The premium is the average of daily mandi-level values of (retail price - wholesale price) / wholesale price. Blinkit is a quick-commerce channel, so these figures include convenience markups and are an upper-end indicator, not the intermediary margin alone.
+- **Retail premium by crop.** Over the 30 scored days from 20 Oct to 18 Nov 2026, the average retail premium over the mandi price was highest for Green Chilli (about 394%), then Tomato (239%), Garlic (199%), Potato (150%) and Onion (85%). The premium is the average of daily mandi-level values of (retail price - wholesale price) / wholesale price. Blinkit is a quick-commerce channel, so these figures include convenience markups and are an upper-end indicator, not the intermediary margin alone.
 - **Flags are indicators, not verdicts.** Some flags reflect a change in what a mandi reports rather than a real price move; an example is described in `METHODOLOGY.md`.
 
 ---
