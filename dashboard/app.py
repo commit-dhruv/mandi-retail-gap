@@ -7,6 +7,7 @@ Tabs:
   2. Price Trends     - wholesale vs retail line chart over time
   3. District Heat-Map - Gujarat choropleth of avg wedge_pct
   4. Anomaly Table    - flagged wholesale/retail anomalies
+  5. All Records      - every wholesale record, sortable
 """
 
 import re
@@ -242,6 +243,30 @@ def get_anomalies(crops, start_date, end_date):
     )
 
 
+@st.cache_data(ttl=3600)
+def get_all_records(crops, start_date, end_date):
+    return run_query(
+        """
+        SELECT w.price_date AS "Date",
+               c.crop_name AS "Crop",
+               m.district AS "District",
+               m.mandi_name AS "Mandi",
+               w.variety AS "Variety",
+               w.min_price AS "Min Price (₹/kg)",
+               w.max_price AS "Max Price (₹/kg)",
+               w.modal_price AS "Modal Price (₹/kg)",
+               w.is_provisional AS "Provisional"
+        FROM wholesale_price w
+        JOIN crop_master c ON w.crop_id = c.crop_id
+        JOIN mandi_master m ON w.mandi_id = m.mandi_id
+        WHERE c.crop_name IN %(crops)s
+          AND w.price_date BETWEEN %(start)s AND %(end)s
+        ORDER BY w.price_date DESC, c.crop_name, m.district, m.mandi_name, w.variety
+        """,
+        params={"crops": crops, "start": start_date, "end": end_date},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Formatting helpers
 # ---------------------------------------------------------------------------
@@ -298,8 +323,8 @@ crops_for_query = tuple(selected_crops) if selected_crops else ("__none__",)
 if not selected_crops:
     st.sidebar.warning("Select at least one crop to see data.")
 
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["📊 Overview", "📈 Price Trends", "🗺️ District Heat-Map", "🚨 Anomaly Table"]
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["📊 Overview", "📈 Price Trends", "🗺️ District Heat-Map", "🚨 Anomaly Table", "📋 All Records"]
 )
 
 # ---------------------------------------------------------------------------
@@ -476,3 +501,62 @@ with tab4:
         "Ahmedabad is Blinkit data, five other cities are modeled from Ahmedabad, "
         "and other districts use Ahmedabad as the Gujarat reference."
     )
+
+# ---------------------------------------------------------------------------
+# Tab 5 — All Records
+# ---------------------------------------------------------------------------
+
+with tab5:
+    st.subheader("All Wholesale Records")
+
+    records_df = get_all_records(crops_for_query, start_date, end_date)
+
+    if records_df.empty:
+        st.info("No wholesale records for the selected filters.")
+    else:
+        # label -> (column, ascending)
+        sort_options = {
+            "Date (latest first)": ("Date", False),
+            "Date (oldest first)": ("Date", True),
+            "Modal price (high to low)": ("Modal Price (₹/kg)", False),
+            "Modal price (low to high)": ("Modal Price (₹/kg)", True),
+            "Crop (A to Z)": ("Crop", True),
+            "District (A to Z)": ("District", True),
+            "Mandi (A to Z)": ("Mandi", True),
+        }
+        # One row of controls; an empty filter means "all"
+        col_district, col_mandi, col_variety, col_sort = st.columns(4)
+        df = records_df
+        for column, label, slot in [
+            ("Crop", "Crop", col_district),
+            ("District", "District", col_mandi),
+            ("Mandi", "Mandi", col_variety),
+        ]:
+            # Options narrow to what the filters to the left have left over
+            options = sorted(df[column].dropna().unique())
+            chosen = slot.multiselect(label, options, placeholder="All", key=f"records_{column}")
+            if chosen:
+                df = df[df[column].isin(chosen)]
+
+        sort_label = col_sort.selectbox("Sort by", list(sort_options))
+        sort_column, ascending = sort_options[sort_label]
+
+        # Stable sort keeps the query's latest-date-first order within ties
+        df = df.sort_values(sort_column, ascending=ascending, kind="stable")
+
+        st.caption(
+            f"{len(df):,} of {len(records_df):,} records, including provisional ones. "
+            "Use the sidebar to filter by crop and date."
+        )
+        st.dataframe(
+            df,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Date": st.column_config.DateColumn(format="DD MMM YYYY"),
+                "Min Price (₹/kg)": st.column_config.NumberColumn(format="₹%.2f"),
+                "Max Price (₹/kg)": st.column_config.NumberColumn(format="₹%.2f"),
+                "Modal Price (₹/kg)": st.column_config.NumberColumn(format="₹%.2f"),
+                "Provisional": st.column_config.CheckboxColumn(),
+            },
+        )
